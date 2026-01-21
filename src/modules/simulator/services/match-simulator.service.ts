@@ -187,7 +187,6 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
       }
       this.simulatedMatches.splice(index, 1);
 
-      // Clear event counts asynchronously (fire and forget)
       this.eventGeneratorService.clearMatchEvents(matchId).catch((error) => {
         this.logger.error(`Failed to clear event counts for match ${matchId}: ${error}`);
       });
