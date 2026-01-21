@@ -2,6 +2,11 @@
 
 A production-ready NestJS backend API for a real-time football match center with live match data, WebSocket updates, Server-Sent Events (SSE), and chat functionality.
 
+
+
+- **Live API**: https://profootball-production.up.railway.app
+- **GitHub Repository**: https://github.com/Barnyvic/ProFootball
+
 ## Features
 
 - **REST API** for match data retrieval
