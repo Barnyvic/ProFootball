@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventType } from '../../matches/enums/event-type.enum';
 import { MatchesRepository } from '../../matches/repositories/matches.repository';
 import { EventBusService } from '../../../shared/events/event-bus.service';
+import { RedisService } from '../../../shared/cache/redis.service';
 import { GoalStrategy } from '../strategies/goal.strategy';
 import { CardStrategy } from '../strategies/card.strategy';
 import { SubstitutionStrategy } from '../strategies/substitution.strategy';
@@ -11,12 +12,12 @@ import { MatchContext, GeneratedEvent } from '../strategies/event-strategy.inter
 @Injectable()
 export class EventGeneratorService {
   private readonly logger = new Logger(EventGeneratorService.name);
-
-  private matchEventCounts: Map<string, Map<EventType, number>> = new Map();
+  private readonly eventCountsKeyPrefix = 'match:event_counts:';
 
   constructor(
     private readonly matchesRepository: MatchesRepository,
     private readonly eventBusService: EventBusService,
+    private readonly redisService: RedisService,
     private readonly goalStrategy: GoalStrategy,
     private readonly cardStrategy: CardStrategy,
     private readonly substitutionStrategy: SubstitutionStrategy,
@@ -26,7 +27,7 @@ export class EventGeneratorService {
     const match = await this.matchesRepository.findById(matchId);
     if (!match) return;
 
-    const context = this.buildMatchContext(matchId, match);
+    const context = await this.buildMatchContext(matchId, match);
 
     await this.tryGenerateEvent(matchId, this.goalStrategy, context);
     await this.tryGenerateEvent(matchId, this.cardStrategy, context);
@@ -35,15 +36,15 @@ export class EventGeneratorService {
     await this.maybeGenerateShot(matchId, context);
   }
 
-  private buildMatchContext(
+  private async buildMatchContext(
     matchId: string,
     match: Awaited<ReturnType<MatchesRepository['findById']>>,
-  ): MatchContext {
+  ): Promise<MatchContext> {
     if (!match) {
       throw new Error(`Match ${matchId} not found`);
     }
 
-    const eventCounts = this.matchEventCounts.get(matchId) || new Map();
+    const eventCounts = await this.getEventCounts(matchId);
 
     return {
       minute: match.minute,
@@ -144,11 +145,7 @@ export class EventGeneratorService {
   }
 
   private async emitEvent(matchId: string, event: GeneratedEvent, minute: number): Promise<void> {
-    if (!this.matchEventCounts.has(matchId)) {
-      this.matchEventCounts.set(matchId, new Map());
-    }
-    const counts = this.matchEventCounts.get(matchId)!;
-    counts.set(event.type, (counts.get(event.type) || 0) + 1);
+    await this.incrementEventCount(matchId, event.type);
 
     const matchEvent = {
       id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -243,7 +240,48 @@ export class EventGeneratorService {
     return players;
   }
 
-  clearMatchEvents(matchId: string): void {
-    this.matchEventCounts.delete(matchId);
+  async clearMatchEvents(matchId: string): Promise<void> {
+    try {
+      const key = this.getEventCountsKey(matchId);
+      await this.redisService.del(key);
+    } catch (error) {
+      this.logger.error(`Failed to clear event counts for match ${matchId}: ${error}`);
+    }
+  }
+
+  private getEventCountsKey(matchId: string): string {
+    return `${this.eventCountsKeyPrefix}${matchId}`;
+  }
+
+  private async getEventCounts(matchId: string): Promise<Map<EventType, number>> {
+    try {
+      const key = this.getEventCountsKey(matchId);
+      const client = this.redisService.getClient();
+      const counts = await client.hgetall(key);
+
+      const eventCounts = new Map<EventType, number>();
+      for (const [eventType, countStr] of Object.entries(counts)) {
+        const count = parseInt(countStr, 10);
+        if (!isNaN(count)) {
+          eventCounts.set(eventType as EventType, count);
+        }
+      }
+
+      return eventCounts;
+    } catch (error) {
+      this.logger.error(`Failed to get event counts for match ${matchId}: ${error}`);
+      return new Map();
+    }
+  }
+
+  private async incrementEventCount(matchId: string, eventType: EventType): Promise<void> {
+    try {
+      const key = this.getEventCountsKey(matchId);
+      const client = this.redisService.getClient();
+      await client.hincrby(key, eventType, 1);
+      await client.expire(key, 4 * 60 * 60);
+    } catch (error) {
+      this.logger.error(`Failed to increment event count for match ${matchId}: ${error}`);
+    }
   }
 }
