@@ -20,9 +20,8 @@ export class MatchEventsService {
 
   constructor(private readonly matchesRepository: MatchesRepository) {}
 
-
-  createEventStream(matchId: string, lastEventId?: string): Observable<SSEMessage> {
-    const match = this.matchesRepository.findById(matchId);
+  async createEventStream(matchId: string, lastEventId?: string): Promise<Observable<SSEMessage>> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) {
       throw new NotFoundException(`Match with ID ${matchId} not found`);
     }
@@ -37,7 +36,7 @@ export class MatchEventsService {
     this.logger.debug(`SSE client connected to match ${matchId}`);
 
     if (lastEventId) {
-      const missedEvents = this.matchesRepository.getEventsAfterId(matchId, lastEventId);
+      const missedEvents = await this.matchesRepository.getEventsAfterId(matchId, lastEventId);
       missedEvents.forEach((event) => {
         subject.next({
           id: event.id,
@@ -79,7 +78,7 @@ export class MatchEventsService {
   }
 
   @OnEvent(EVENTS.MATCH_EVENT)
-  handleMatchEvent(payload: MatchEventPayload): void {
+  async handleMatchEvent(payload: MatchEventPayload): Promise<void> {
     const event: MatchEvent = {
       id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       matchId: payload.matchId,
@@ -91,7 +90,7 @@ export class MatchEventsService {
       timestamp: new Date(),
     };
 
-    this.matchesRepository.addEvent(payload.matchId, event);
+    await this.matchesRepository.addEvent(payload.matchId, event);
 
     this.broadcastToMatch(payload.matchId, {
       id: event.id,

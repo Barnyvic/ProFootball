@@ -81,23 +81,23 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   @SubscribeMessage('subscribe_match')
-  handleSubscribeMatch(
+  async handleSubscribeMatch(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: SubscribeMatchDto,
-  ): { success: boolean; matchId: string; error?: string } {
+  ): Promise<{ success: boolean; matchId: string; error?: string }> {
     try {
       if (!data?.matchId) {
         return { success: false, matchId: '', error: 'Match ID is required' };
       }
 
-      if (!this.matchesService.matchExists(data.matchId)) {
+      if (!(await this.matchesService.matchExists(data.matchId))) {
         return { success: false, matchId: data.matchId, error: 'Match not found' };
       }
 
       const success = this.subscriptionService.subscribeToMatch(client, data.matchId);
 
       if (success) {
-        const match = this.matchesService.getMatchById(data.matchId);
+        const match = await this.matchesService.getMatchById(data.matchId);
         client.emit('subscribed', { matchId: data.matchId, currentState: match });
       }
 
@@ -122,16 +122,16 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   @SubscribeMessage('join_chat')
-  handleJoinChat(
+  async handleJoinChat(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: JoinChatDto,
-  ): { success: boolean; matchId: string; userCount?: number; error?: string } {
+  ): Promise<{ success: boolean; matchId: string; userCount?: number; error?: string }> {
     try {
       if (!data?.matchId || !data?.userId || !data?.username) {
         return { success: false, matchId: '', error: 'Missing required fields' };
       }
 
-      if (!this.matchesService.matchExists(data.matchId)) {
+      if (!(await this.matchesService.matchExists(data.matchId))) {
         return { success: false, matchId: data.matchId, error: 'Match not found' };
       }
       const isAlreadyInChat = this.subscriptionService.isUserInChat(data.matchId, data.userId);

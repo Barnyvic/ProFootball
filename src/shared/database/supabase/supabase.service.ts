@@ -122,4 +122,40 @@ export class SupabaseService implements OnModuleInit {
 
     return updated as T;
   }
+
+  async delete(table: string, filter: Record<string, unknown>): Promise<boolean> {
+    let query = this.getClient().from(table).delete();
+
+    Object.entries(filter).forEach(([key, value]) => {
+      query = query.eq(key, value);
+    });
+
+    const { error } = await query;
+
+    if (error) {
+      this.logger.error(`Database delete error: ${error.message}`);
+      throw error;
+    }
+
+    return true;
+  }
+
+  async count(table: string, filter?: Record<string, unknown>): Promise<number> {
+    let query = this.getClient().from(table).select('*', { count: 'exact', head: true });
+
+    if (filter) {
+      Object.entries(filter).forEach(([key, value]) => {
+        query = query.eq(key, value);
+      });
+    }
+
+    const { count, error } = await query;
+
+    if (error) {
+      this.logger.error(`Database count error: ${error.message}`);
+      throw error;
+    }
+
+    return count || 0;
+  }
 }

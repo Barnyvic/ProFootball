@@ -12,8 +12,8 @@ export class MatchesService {
 
   constructor(private readonly matchesRepository: MatchesRepository) {}
 
-  getAllMatches(): MatchListResponseDto {
-    const matches = this.matchesRepository.findAll();
+  async getAllMatches(): Promise<MatchListResponseDto> {
+    const matches = await this.matchesRepository.findAll();
 
     const matchDtos: MatchListItemDto[] = matches.map((match) => this.toMatchListItem(match));
 
@@ -23,11 +23,11 @@ export class MatchesService {
     };
   }
 
-  getLiveMatches(): MatchListResponseDto {
+  async getLiveMatches(): Promise<MatchListResponseDto> {
     const liveStatuses = [MatchStatus.FIRST_HALF, MatchStatus.HALF_TIME, MatchStatus.SECOND_HALF];
-    const matches = this.matchesRepository
-      .findAll()
-      .filter((m) => liveStatuses.includes(m.status));
+    const matches = (await this.matchesRepository.findAll()).filter((m) =>
+      liveStatuses.includes(m.status),
+    );
 
     return {
       matches: matches.map((m) => this.toMatchListItem(m)),
@@ -35,8 +35,8 @@ export class MatchesService {
     };
   }
 
-  getMatchById(id: string): MatchDetailDto {
-    const match = this.matchesRepository.findById(id);
+  async getMatchById(id: string): Promise<MatchDetailDto> {
+    const match = await this.matchesRepository.findById(id);
 
     if (!match) {
       throw new NotFoundException(`Match with ID ${id} not found`);
@@ -45,12 +45,12 @@ export class MatchesService {
     return this.toMatchDetail(match);
   }
 
-  getMatchEntity(id: string): Match | null {
-    return this.matchesRepository.findById(id);
+  async getMatchEntity(id: string): Promise<Match | null> {
+    return await this.matchesRepository.findById(id);
   }
 
-  getMatchEvents(id: string): MatchEvent[] {
-    const match = this.matchesRepository.findById(id);
+  async getMatchEvents(id: string): Promise<MatchEvent[]> {
+    const match = await this.matchesRepository.findById(id);
 
     if (!match) {
       throw new NotFoundException(`Match with ID ${id} not found`);
@@ -59,13 +59,14 @@ export class MatchesService {
     return match.events;
   }
 
-  getEventsAfterId(matchId: string, lastEventId: string): MatchEventDto[] {
-    const events = this.matchesRepository.getEventsAfterId(matchId, lastEventId);
+  async getEventsAfterId(matchId: string, lastEventId: string): Promise<MatchEventDto[]> {
+    const events = await this.matchesRepository.getEventsAfterId(matchId, lastEventId);
     return events.map((e) => this.toMatchEventDto(e));
   }
 
-  matchExists(id: string): boolean {
-    return this.matchesRepository.findById(id) !== null;
+  async matchExists(id: string): Promise<boolean> {
+    const match = await this.matchesRepository.findById(id);
+    return match !== null;
   }
 
 

@@ -22,34 +22,38 @@ export class EventGeneratorService {
     private readonly substitutionStrategy: SubstitutionStrategy,
   ) {}
 
-  generateEvents(matchId: string): void {
-    const match = this.matchesRepository.findById(matchId);
+  async generateEvents(matchId: string): Promise<void> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) return;
 
     const context = this.buildMatchContext(matchId, match);
 
-    this.tryGenerateEvent(matchId, this.goalStrategy, context);
-    this.tryGenerateEvent(matchId, this.cardStrategy, context);
-    this.tryGenerateEvent(matchId, this.substitutionStrategy, context);
-    this.maybeGenerateFoul(matchId, context);
-    this.maybeGenerateShot(matchId, context);
+    await this.tryGenerateEvent(matchId, this.goalStrategy, context);
+    await this.tryGenerateEvent(matchId, this.cardStrategy, context);
+    await this.tryGenerateEvent(matchId, this.substitutionStrategy, context);
+    await this.maybeGenerateFoul(matchId, context);
+    await this.maybeGenerateShot(matchId, context);
   }
 
   private buildMatchContext(
     matchId: string,
-    match: ReturnType<MatchesRepository['findById']>,
+    match: Awaited<ReturnType<MatchesRepository['findById']>>,
   ): MatchContext {
+    if (!match) {
+      throw new Error(`Match ${matchId} not found`);
+    }
+
     const eventCounts = this.matchEventCounts.get(matchId) || new Map();
 
     return {
-      minute: match!.minute,
-      homeScore: match!.homeScore,
-      awayScore: match!.awayScore,
-      homeTeamName: match!.homeTeam.name,
-      awayTeamName: match!.awayTeam.name,
-      homePlayers: this.getTeamPlayers(match!.homeTeam.name),
-      awayPlayers: this.getTeamPlayers(match!.awayTeam.name),
-      status: match!.status,
+      minute: match.minute,
+      homeScore: match.homeScore,
+      awayScore: match.awayScore,
+      homeTeamName: match.homeTeam.name,
+      awayTeamName: match.awayTeam.name,
+      homePlayers: this.getTeamPlayers(match.homeTeam.name),
+      awayPlayers: this.getTeamPlayers(match.awayTeam.name),
+      status: match.status,
       eventsGenerated: Array.from(eventCounts.entries()).map(([type, count]) => ({
         type,
         count,
@@ -57,31 +61,31 @@ export class EventGeneratorService {
     };
   }
 
-  private tryGenerateEvent(
+  private async tryGenerateEvent(
     matchId: string,
     strategy: { shouldGenerate: Function; generate: Function },
     context: MatchContext,
-  ): void {
+  ): Promise<void> {
     if (strategy.shouldGenerate(context.minute, context)) {
       const team = this.selectTeam(context);
       const event = strategy.generate(team, context) as GeneratedEvent;
 
-      this.emitEvent(matchId, event, context.minute);
+      await this.emitEvent(matchId, event, context.minute);
 
       if (event.type === EventType.GOAL) {
-        this.updateScore(matchId, team);
+        await this.updateScore(matchId, team);
       }
     }
   }
 
-  private maybeGenerateFoul(matchId: string, context: MatchContext): void {
+  private async maybeGenerateFoul(matchId: string, context: MatchContext): Promise<void> {
     if (Math.random() < 0.4) {
       const team = this.selectTeam(context);
       const players = team === 'home' ? context.homePlayers : context.awayPlayers;
       const teamName = team === 'home' ? context.homeTeamName : context.awayTeamName;
       const player = players[Math.floor(Math.random() * players.length)];
 
-      this.emitEvent(
+      await this.emitEvent(
         matchId,
         {
           type: EventType.FOUL,
@@ -92,16 +96,16 @@ export class EventGeneratorService {
         context.minute,
       );
 
-      const match = this.matchesRepository.findById(matchId);
+      const match = await this.matchesRepository.findById(matchId);
       if (match) {
         const fouls = { ...match.statistics.fouls };
         fouls[team]++;
-        this.matchesRepository.updateStatistics(matchId, { fouls });
+        await this.matchesRepository.updateStatistics(matchId, { fouls });
       }
     }
   }
 
-  private maybeGenerateShot(matchId: string, context: MatchContext): void {
+  private async maybeGenerateShot(matchId: string, context: MatchContext): Promise<void> {
     if (Math.random() < 0.25) {
       const team = this.selectTeam(context);
       const players = team === 'home' ? context.homePlayers : context.awayPlayers;
@@ -109,7 +113,7 @@ export class EventGeneratorService {
       const player = players[Math.floor(Math.random() * players.length)];
       const onTarget = Math.random() < 0.35;
 
-      this.emitEvent(
+      await this.emitEvent(
         matchId,
         {
           type: EventType.SHOT,
@@ -122,7 +126,7 @@ export class EventGeneratorService {
         context.minute,
       );
 
-      const match = this.matchesRepository.findById(matchId);
+      const match = await this.matchesRepository.findById(matchId);
       if (match) {
         const shots = { ...match.statistics.shots };
         const shotsOnTarget = { ...match.statistics.shotsOnTarget };
@@ -130,7 +134,7 @@ export class EventGeneratorService {
         if (onTarget) {
           shotsOnTarget[team]++;
         }
-        this.matchesRepository.updateStatistics(matchId, { shots, shotsOnTarget });
+        await this.matchesRepository.updateStatistics(matchId, { shots, shotsOnTarget });
       }
     }
   }
@@ -139,12 +143,26 @@ export class EventGeneratorService {
     return Math.random() < 0.55 ? 'home' : 'away';
   }
 
-  private emitEvent(matchId: string, event: GeneratedEvent, minute: number): void {
+  private async emitEvent(matchId: string, event: GeneratedEvent, minute: number): Promise<void> {
     if (!this.matchEventCounts.has(matchId)) {
       this.matchEventCounts.set(matchId, new Map());
     }
     const counts = this.matchEventCounts.get(matchId)!;
     counts.set(event.type, (counts.get(event.type) || 0) + 1);
+
+    const matchEvent = {
+      id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      matchId,
+      type: event.type,
+      minute,
+      team: event.team,
+      player: event.player,
+      assistPlayer: event.assistPlayer,
+      description: event.description,
+      timestamp: new Date(),
+    };
+
+    await this.matchesRepository.addEvent(matchId, matchEvent);
 
     this.eventBusService.emitMatchEvent({
       matchId,
@@ -158,14 +176,14 @@ export class EventGeneratorService {
     this.logger.debug(`Event generated for match ${matchId}: ${event.type} at ${minute}'`);
   }
 
-  private updateScore(matchId: string, team: 'home' | 'away'): void {
-    const match = this.matchesRepository.findById(matchId);
+  private async updateScore(matchId: string, team: 'home' | 'away'): Promise<void> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) return;
 
     const homeScore = team === 'home' ? match.homeScore + 1 : match.homeScore;
     const awayScore = team === 'away' ? match.awayScore + 1 : match.awayScore;
 
-    this.matchesRepository.updateScore(matchId, homeScore, awayScore);
+    await this.matchesRepository.updateScore(matchId, homeScore, awayScore);
 
     this.eventBusService.emitScoreUpdate({
       matchId,

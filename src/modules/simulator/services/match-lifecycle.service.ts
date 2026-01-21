@@ -12,8 +12,8 @@ export class MatchLifecycleService {
     private readonly eventBusService: EventBusService,
   ) {}
 
-  checkAndTransition(matchId: string, minute: number): MatchStatus | null {
-    const match = this.matchesRepository.findById(matchId);
+  async checkAndTransition(matchId: string, minute: number): Promise<MatchStatus | null> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) return null;
 
     const currentStatus = match.status;
@@ -49,7 +49,7 @@ export class MatchLifecycleService {
     }
 
     if (newStatus && newStatus !== currentStatus) {
-      this.matchesRepository.updateStatus(matchId, newStatus);
+      await this.matchesRepository.updateStatus(matchId, newStatus);
 
       this.eventBusService.emitStatusChange({
         matchId,
@@ -67,14 +67,14 @@ export class MatchLifecycleService {
     return null;
   }
 
-  startMatch(matchId: string): boolean {
-    const match = this.matchesRepository.findById(matchId);
+  async startMatch(matchId: string): Promise<boolean> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match || match.status !== MatchStatus.NOT_STARTED) {
       return false;
     }
 
-    this.matchesRepository.updateMinute(matchId, 0);
-    this.matchesRepository.updateStatus(matchId, MatchStatus.FIRST_HALF);
+    await this.matchesRepository.updateMinute(matchId, 0);
+    await this.matchesRepository.updateStatus(matchId, MatchStatus.FIRST_HALF);
 
     this.eventBusService.emitStatusChange({
       matchId,
@@ -86,20 +86,20 @@ export class MatchLifecycleService {
     return true;
   }
 
-  isPlayable(matchId: string): boolean {
-    const match = this.matchesRepository.findById(matchId);
+  async isPlayable(matchId: string): Promise<boolean> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) return false;
 
     return [MatchStatus.FIRST_HALF, MatchStatus.SECOND_HALF].includes(match.status);
   }
 
-  isHalfTime(matchId: string): boolean {
-    const match = this.matchesRepository.findById(matchId);
+  async isHalfTime(matchId: string): Promise<boolean> {
+    const match = await this.matchesRepository.findById(matchId);
     return match?.status === MatchStatus.HALF_TIME;
   }
 
-  isFinished(matchId: string): boolean {
-    const match = this.matchesRepository.findById(matchId);
+  async isFinished(matchId: string): Promise<boolean> {
+    const match = await this.matchesRepository.findById(matchId);
     return match?.status === MatchStatus.FULL_TIME;
   }
 

@@ -25,35 +25,36 @@ export class MatchesController {
   ) {}
 
   @Get()
-  getAllMatches(): MatchListResponseDto {
+  async getAllMatches(): Promise<MatchListResponseDto> {
     this.logger.debug('GET /api/matches');
-    return this.matchesService.getAllMatches();
+    return await this.matchesService.getAllMatches();
   }
 
   @Get('live')
-  getLiveMatches(): MatchListResponseDto {
+  async getLiveMatches(): Promise<MatchListResponseDto> {
     this.logger.debug('GET /api/matches/live');
-    return this.matchesService.getLiveMatches();
+    return await this.matchesService.getLiveMatches();
   }
 
   @Get(':id')
-  getMatchById(@Param('id') id: string): MatchDetailDto {
+  async getMatchById(@Param('id') id: string): Promise<MatchDetailDto> {
     this.logger.debug(`GET /api/matches/${id}`);
-    return this.matchesService.getMatchById(id);
+    return await this.matchesService.getMatchById(id);
   }
 
   @Sse(':id/events/stream')
-  streamEvents(
+  async streamEvents(
     @Param('id') id: string,
     @Headers('last-event-id') lastEventId?: string,
-  ): Observable<MessageEvent> {
+  ): Promise<Observable<MessageEvent>> {
     this.logger.debug(`SSE connection established for match ${id}`);
 
-    if (!this.matchesService.matchExists(id)) {
+    if (!(await this.matchesService.matchExists(id))) {
       throw new NotFoundException(`Match with ID ${id} not found`);
     }
 
-    return this.matchEventsService.createEventStream(id, lastEventId).pipe(
+    const stream = await this.matchEventsService.createEventStream(id, lastEventId);
+    return stream.pipe(
       map((event) => ({
         id: event.id,
         type: event.type,

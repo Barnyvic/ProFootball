@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MatchesRepository } from '../../matches/repositories/matches.repository';
+import { TeamsRepository } from '../../matches/repositories/teams.repository';
 import { MatchStatus } from '../../matches/enums/match-status.enum';
 import { EventGeneratorService } from './event-generator.service';
 import { MatchLifecycleService } from './match-lifecycle.service';
 import { Team } from '../../matches/entities/team.entity';
-import { v4 as uuidv4 } from 'uuid';
 
 interface SimulatedMatch {
   id: string;
@@ -17,36 +17,27 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MatchSimulatorService.name);
 
   private simulatedMatches: SimulatedMatch[] = [];
-  private readonly matchCount = 4;  
+  private readonly matchCount = 4;
   private simulationSpeed: number;
-
-  private readonly teams: Team[] = [
-    { id: uuidv4(), name: 'Manchester United', shortName: 'MUN', logoUrl: undefined },
-    { id: uuidv4(), name: 'Manchester City', shortName: 'MCI', logoUrl: undefined },
-    { id: uuidv4(), name: 'Liverpool', shortName: 'LIV', logoUrl: undefined },
-    { id: uuidv4(), name: 'Chelsea', shortName: 'CHE', logoUrl: undefined },
-    { id: uuidv4(), name: 'Arsenal', shortName: 'ARS', logoUrl: undefined },
-    { id: uuidv4(), name: 'Tottenham', shortName: 'TOT', logoUrl: undefined },
-    { id: uuidv4(), name: 'Newcastle United', shortName: 'NEW', logoUrl: undefined },
-    { id: uuidv4(), name: 'Aston Villa', shortName: 'AVL', logoUrl: undefined },
-    { id: uuidv4(), name: 'West Ham', shortName: 'WHU', logoUrl: undefined },
-    { id: uuidv4(), name: 'Brighton', shortName: 'BHA', logoUrl: undefined },
-  ];
+  private teams: Team[] = [];
 
   constructor(
     private readonly configService: ConfigService,
     private readonly matchesRepository: MatchesRepository,
+    private readonly teamsRepository: TeamsRepository,
     private readonly eventGeneratorService: EventGeneratorService,
     private readonly matchLifecycleService: MatchLifecycleService,
   ) {
     this.simulationSpeed = this.configService.get<number>('simulation.speed') || 1;
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.logger.log(
       `Match Simulator starting with ${this.matchCount} matches at ${this.simulationSpeed}x speed`,
     );
-    this.initializeMatches();
+
+    await this.loadTeams();
+    await this.initializeMatches();
   }
 
   onModuleDestroy(): void {
@@ -54,7 +45,51 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Match Simulator stopped');
   }
 
-  private initializeMatches(): void {
+  private async loadTeams(): Promise<void> {
+    this.teams = await this.teamsRepository.findAll();
+
+    if (this.teams.length === 0) {
+      this.logger.warn('No teams found in database. Seeding teams...');
+      await this.seedTeams();
+      this.teams = await this.teamsRepository.findAll();
+    }
+
+    if (this.teams.length < 2) {
+      this.logger.error('Not enough teams in database. Need at least 2 teams.');
+      return;
+    }
+
+    this.logger.log(`Loaded ${this.teams.length} teams from database`);
+  }
+
+  private async seedTeams(): Promise<void> {
+    const defaultTeams: Omit<Team, 'id'>[] = [
+      { name: 'Manchester United', shortName: 'MUN', logoUrl: undefined },
+      { name: 'Manchester City', shortName: 'MCI', logoUrl: undefined },
+      { name: 'Liverpool', shortName: 'LIV', logoUrl: undefined },
+      { name: 'Chelsea', shortName: 'CHE', logoUrl: undefined },
+      { name: 'Arsenal', shortName: 'ARS', logoUrl: undefined },
+      { name: 'Tottenham', shortName: 'TOT', logoUrl: undefined },
+      { name: 'Newcastle United', shortName: 'NEW', logoUrl: undefined },
+      { name: 'Aston Villa', shortName: 'AVL', logoUrl: undefined },
+      { name: 'West Ham', shortName: 'WHU', logoUrl: undefined },
+      { name: 'Brighton', shortName: 'BHA', logoUrl: undefined },
+    ];
+
+    try {
+      await this.teamsRepository.createMany(defaultTeams);
+      this.logger.log(`Successfully seeded ${defaultTeams.length} teams`);
+    } catch (error) {
+      this.logger.error(`Failed to seed teams: ${error}`);
+    }
+  }
+
+  private async initializeMatches(): Promise<void> {
+    if (this.teams.length < 2) {
+      this.logger.error('Cannot initialize matches: not enough teams');
+      return;
+    }
+
     const shuffledTeams = [...this.teams].sort(() => Math.random() - 0.5);
 
     for (let i = 0; i < this.matchCount && i * 2 + 1 < shuffledTeams.length; i++) {
@@ -63,14 +98,14 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
 
       const startDelay = i * 2000;
 
-      setTimeout(() => {
-        this.createAndStartMatch(homeTeam, awayTeam);
+      setTimeout(async () => {
+        await this.createAndStartMatch(homeTeam, awayTeam);
       }, startDelay);
     }
   }
 
-  private createAndStartMatch(homeTeam: Team, awayTeam: Team): void {
-    const match = this.matchesRepository.create(homeTeam, awayTeam, new Date());
+  private async createAndStartMatch(homeTeam: Team, awayTeam: Team): Promise<void> {
+    const match = await this.matchesRepository.create(homeTeam, awayTeam, new Date());
 
     this.logger.log(
       `Created match: ${homeTeam.name} vs ${awayTeam.name} (ID: ${match.id})`,
@@ -85,8 +120,8 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
   private startMatchSimulation(matchId: string): void {
     const intervalMs = 1000 / this.simulationSpeed;
 
-    const intervalId = setInterval(() => {
-      this.tickMatch(matchId);
+    const intervalId = setInterval(async () => {
+      await this.tickMatch(matchId);
     }, intervalMs);
 
     this.simulatedMatches.push({ id: matchId, intervalId });
@@ -94,14 +129,14 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Match ${matchId} simulation started`);
   }
 
-  private tickMatch(matchId: string): void {
-    const match = this.matchesRepository.findById(matchId);
+  private async tickMatch(matchId: string): Promise<void> {
+    const match = await this.matchesRepository.findById(matchId);
     if (!match) {
       this.stopMatchSimulation(matchId);
       return;
     }
 
-    const newStatus = this.matchLifecycleService.checkAndTransition(
+    const newStatus = await this.matchLifecycleService.checkAndTransition(
       matchId,
       match.minute,
     );
@@ -117,17 +152,17 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (newStatus === MatchStatus.HALF_TIME) {
-      setTimeout(() => {
-        this.matchesRepository.updateMinute(matchId, 46);
+      setTimeout(async () => {
+        await this.matchesRepository.updateMinute(matchId, 46);
       }, 2000 / this.simulationSpeed);
       return;
     }
 
-    if (this.matchLifecycleService.isPlayable(matchId)) {
-      this.eventGeneratorService.generateEvents(matchId);
+    if (await this.matchLifecycleService.isPlayable(matchId)) {
+      await this.eventGeneratorService.generateEvents(matchId);
     }
 
-    this.matchesRepository.updateMinute(matchId, match.minute + 1);
+    await this.matchesRepository.updateMinute(matchId, match.minute + 1);
   }
 
   private stopMatchSimulation(matchId: string): void {
@@ -145,10 +180,15 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private scheduleNewMatch(): void {
+  private async scheduleNewMatch(): Promise<void> {
     const playingTeamIds = new Set<string>();
-    const activeMatches = this.matchesRepository.findAll().filter((m) =>
-      [MatchStatus.NOT_STARTED, MatchStatus.FIRST_HALF, MatchStatus.HALF_TIME, MatchStatus.SECOND_HALF].includes(m.status)
+    const activeMatches = (await this.matchesRepository.findAll()).filter((m) =>
+      [
+        MatchStatus.NOT_STARTED,
+        MatchStatus.FIRST_HALF,
+        MatchStatus.HALF_TIME,
+        MatchStatus.SECOND_HALF,
+      ].includes(m.status),
     );
 
     activeMatches.forEach((m) => {
@@ -161,8 +201,8 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     if (availableTeams.length >= 2) {
       const shuffled = availableTeams.sort(() => Math.random() - 0.5);
 
-      setTimeout(() => {
-        this.createAndStartMatch(shuffled[0], shuffled[1]);
+      setTimeout(async () => {
+        await this.createAndStartMatch(shuffled[0], shuffled[1]);
       }, 5000 / this.simulationSpeed);
     } else {
       setTimeout(() => {
