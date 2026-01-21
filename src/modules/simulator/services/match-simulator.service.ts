@@ -127,7 +127,14 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     const intervalMs = 1000 / this.simulationSpeed;
 
     const intervalId = setInterval(async () => {
-      await this.tickMatch(matchId);
+      try {
+        await this.tickMatch(matchId);
+      } catch (error) {
+        this.stopMatchSimulation(matchId);
+        this.logger.error(
+          `Error while simulating match ${matchId} (Supabase/network issue?): ${error}`,
+        );
+      }
     }, intervalMs);
 
     this.simulatedMatches.push({ id: matchId, intervalId });
