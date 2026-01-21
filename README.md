@@ -478,36 +478,6 @@ Error message.
 4. **No Match History**: Finished matches are not archived (consider adding archive table)
 5. **Team Management**: Teams are seeded on startup, no admin interface for team management
 
-## Deployment Guide
-
-### Render / Railway / Heroku
-
-1. **Set Environment Variables** in your hosting platform:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_KEY`
-   - `PORT` (usually auto-set)
-   - `NODE_ENV=production`
-   - `CORS_ORIGINS` (your frontend URL)
-
-2. **Build Command**: `npm run build`
-3. **Start Command**: `npm run start:prod`
-
-4. **Database**: Ensure your Supabase project allows connections from your hosting platform's IP addresses.
-
-### Docker (Optional)
-
-Create a `Dockerfile`:
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "run", "start:prod"]
 ```
 
 ## Development
@@ -549,10 +519,3 @@ src/
 └── main.ts                # Application entry point
 ```
 
-## License
-
-UNLICENSED
-
-## Support
-
-For issues and questions, please open an issue in the repository.
