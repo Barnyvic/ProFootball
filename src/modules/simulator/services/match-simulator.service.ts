@@ -35,9 +35,15 @@ export class MatchSimulatorService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Match Simulator starting with ${this.matchCount} matches at ${this.simulationSpeed}x speed`,
     );
-
-    await this.loadTeams();
-    await this.initializeMatches();
+    try {
+      await this.loadTeams();
+      await this.initializeMatches();
+    } catch (error) {
+      this.logger.error(
+        `Match Simulator failed to initialize (did you run the Supabase migration?): ${error}`,
+      );
+      this.logger.warn('Match Simulator disabled until database schema is available.');
+    }
   }
 
   onModuleDestroy(): void {

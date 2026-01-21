@@ -179,7 +179,6 @@ export class MatchesRepository {
     if (!match) return null;
 
     await this.supabaseService.insert<MatchEventRow>(this.eventsTableName, {
-      id: event.id,
       match_id: id,
       type: event.type,
       minute: event.minute,
